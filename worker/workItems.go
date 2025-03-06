@@ -135,6 +135,11 @@ func (op *ReadOperation) Do() error {
 		promFinishedOps.WithLabelValues(op.TestName, "GET").Inc()
 	}
 	promDownloadedBytes.WithLabelValues(op.TestName, "GET").Add(float64(op.ObjectSize))
+	log.WithField("bucket", op.Bucket).
+		WithField("object", op.ObjectName).
+		WithField("successful?", err == nil).
+		WithField("latency(ms)", float64(duration.Milliseconds())).
+		Debug("finish ReadOperation")
 	return err
 }
 
@@ -142,7 +147,7 @@ func (op *ReadOperation) Do() error {
 func (op *WriteOperation) Do() error {
 	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).Debug("Doing WriteOperation")
 	start := time.Now()
-	err := putObject(svc, op.ObjectName, bytes.NewReader(generateRandomBytes(op.ObjectSize)), op.Bucket)
+	err := putObject(svc, op.ObjectName, bytes.NewReader(generateFixedBytes(op.ObjectSize)), op.Bucket)
 	duration := time.Since(start)
 	promLatency.WithLabelValues(op.TestName, "PUT").Observe(float64(duration.Milliseconds()))
 	if err != nil {
@@ -151,6 +156,11 @@ func (op *WriteOperation) Do() error {
 		promFinishedOps.WithLabelValues(op.TestName, "PUT").Inc()
 	}
 	promUploadedBytes.WithLabelValues(op.TestName, "PUT").Add(float64(op.ObjectSize))
+	log.WithField("bucket", op.Bucket).
+		WithField("object", op.ObjectName).
+		WithField("successful?", err == nil).
+		WithField("latency(ms)", float64(duration.Milliseconds())).
+		Debug("finish WriteOperation")
 	return err
 }
 
@@ -166,6 +176,11 @@ func (op *ListOperation) Do() error {
 	} else {
 		promFinishedOps.WithLabelValues(op.TestName, "LIST").Inc()
 	}
+	log.WithField("bucket", op.Bucket).
+		WithField("object", op.ObjectName).
+		WithField("successful?", err == nil).
+		WithField("latency(ms)", float64(duration.Milliseconds())).
+		Debug("finish ListOperation")
 	return err
 }
 
@@ -181,6 +196,11 @@ func (op *DeleteOperation) Do() error {
 	} else {
 		promFinishedOps.WithLabelValues(op.TestName, "DELETE").Inc()
 	}
+	log.WithField("bucket", op.Bucket).
+		WithField("object", op.ObjectName).
+		WithField("successful?", err == nil).
+		WithField("latency(ms)", float64(duration.Milliseconds())).
+		Debug("finish DeleteOperation")
 	return err
 }
 
@@ -250,4 +270,8 @@ func generateRandomBytes(size uint64) []byte {
 	}
 	log.Tracef("Generated %d random bytes in %v", n, time.Since(now))
 	return random
+}
+
+func generateFixedBytes(size uint64) []byte {
+	return bytes.Repeat([]byte{0}, int(size))
 }

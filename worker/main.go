@@ -150,11 +150,18 @@ func PerfTest(testConfig *common.TestCaseConfiguration, Workqueue *Workqueue, wo
 				log.WithError(err).Error("Error during cleanup - ignoring")
 			}
 		}
-		for bucket := uint64(0); bucket < testConfig.Buckets.NumberMax; bucket++ {
-			err := deleteBucket(housekeepingSvc, fmt.Sprintf("%s%s%d", workerID, testConfig.BucketPrefix, bucket))
+
+		bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
+		for bucket := uint64(0); bucket < bucketCount; bucket++ {
+			bucketName := fmt.Sprintf("%s%s%d", workerID, testConfig.BucketPrefix, bucket)
+			if testConfig.WorkerShareBuckets {
+				bucketName = fmt.Sprintf("%s%d", testConfig.BucketPrefix, bucket)
+			}
+			err := deleteBucket(housekeepingSvc, bucketName)
 			if err != nil {
 				log.WithError(err).Error("Error during bucket deleting - ignoring")
 			}
+			log.Infof("deleteBucket bucketname: %s", bucketName)
 		}
 		log.Info("Housekeeping finished")
 	}
@@ -175,6 +182,7 @@ func workUntilTimeout(Workqueue *Workqueue, workChannel chan WorkItem, notifyCha
 			case workChannel <- work:
 			}
 		}
+
 		for _, work := range *Workqueue.Queue {
 			switch work.(type) {
 			case *DeleteOperation:
