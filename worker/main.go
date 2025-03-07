@@ -119,26 +119,19 @@ func connectToServer(serverAddress string) error {
 
 // PerfTest runs a performance test as configured in testConfig
 func PerfTest(testConfig *common.TestCaseConfiguration, Workqueue *Workqueue, workerID string) time.Duration {
-	workChannel := make(chan WorkItem, len(*Workqueue.Queue))
-	notifyChan := make(chan struct{})
-	wg := &sync.WaitGroup{}
-	wg.Add(testConfig.ParallelClients)
 
 	startTime := time.Now().UTC()
 	promTestStart.WithLabelValues(testConfig.Name).Set(float64(startTime.UnixNano() / int64(1000000)))
 	// promTestGauge.WithLabelValues(testConfig.Name).Inc()
-	for worker := 0; worker < testConfig.ParallelClients; worker++ {
-		go DoWork(workChannel, notifyChan, wg)
-	}
+	//for worker := 0; worker < testConfig.ParallelClients; worker++ {
+	//	go DoWork(workChannel, notifyChan, wg)
+	//}
 	log.Infof("Started %d parallel clients", testConfig.ParallelClients)
 	if testConfig.Runtime != 0 {
-		workUntilTimeout(Workqueue, workChannel, notifyChan, time.Duration(testConfig.Runtime))
+		workUntilTimeout(Workqueue, time.Duration(testConfig.Runtime), testConfig.ParallelClients)
 	} else {
-		workUntilOps(Workqueue, workChannel, testConfig.OpsDeadline, testConfig.ParallelClients)
+		workUntilOps(Workqueue, testConfig.OpsDeadline, testConfig.ParallelClients)
 	}
-	// Wait for all the goroutines to finish
-	wg.Wait()
-	log.Info("All clients finished")
 	endTime := time.Now().UTC()
 	promTestEnd.WithLabelValues(testConfig.Name).Set(float64(endTime.UnixNano() / int64(1000000)))
 
@@ -170,59 +163,45 @@ func PerfTest(testConfig *common.TestCaseConfiguration, Workqueue *Workqueue, wo
 	return endTime.Sub(startTime)
 }
 
-func workUntilTimeout(Workqueue *Workqueue, workChannel chan WorkItem, notifyChan chan<- struct{}, runtime time.Duration) {
-	timer := time.NewTimer(runtime)
-	for {
-		for _, work := range *Workqueue.Queue {
-			select {
-			case <-timer.C:
-				log.Debug("Reached Runtime end")
-				close(notifyChan)
-				return
-			case workChannel <- work:
-			}
-		}
+func workUntilTimeout(Workqueue *Workqueue, runtime time.Duration, numberOfWorker int) {
+	var wg sync.WaitGroup
+	wg.Add(numberOfWorker)
 
-		for _, work := range *Workqueue.Queue {
-			switch work.(type) {
-			case *DeleteOperation:
-				log.Debug("Re-Running Work preparation for delete job started")
-				err := work.Prepare()
-				if err != nil {
-					log.WithError(err).Error("Error during work preparation - ignoring")
-				}
-				log.Debug("Delete preparation re-run finished")
-			}
-		}
+	log.Infof("start parallel work until timeout %v", runtime)
+	for i := 0; i < numberOfWorker; i++ {
+		go workerFunc(i, Workqueue, runtime, numberOfWorker, &wg)
 	}
+
+	wg.Wait()
+	log.Info("All parallels finished")
 }
 
-func workUntilOps(Workqueue *Workqueue, workChannel chan WorkItem, maxOps uint64, numberOfWorker int) {
-	currentOps := uint64(0)
-	for {
-		for _, work := range *Workqueue.Queue {
-			if currentOps >= maxOps {
-				log.Debug("Reached OpsDeadline ... waiting for workers to finish")
-				for worker := 0; worker < numberOfWorker; worker++ {
-					workChannel <- &Stopper{}
+func workUntilOps(Workqueue *Workqueue, maxOps uint64, numberOfWorker int) {
+	var wg sync.WaitGroup
+	wg.Add(numberOfWorker)
+
+	for i := 0; i < numberOfWorker; i++ {
+		go func(id int) {
+			defer wg.Done()
+			currentOps := uint64(0)
+			for currentOps < maxOps {
+				for j := id; j < len(*Workqueue.Queue); j += numberOfWorker {
+					err := (*Workqueue.Queue)[j].Do()
+					if err != nil {
+						log.WithError(err).Error("Issues when performing work - ignoring")
+					}
+					currentOps++
+					if currentOps >= maxOps {
+						break
+					}
 				}
-				return
 			}
-			currentOps++
-			workChannel <- work
-		}
-		for _, work := range *Workqueue.Queue {
-			switch work.(type) {
-			case *DeleteOperation:
-				log.Debug("Re-Running Work preparation for delete job started")
-				err := work.Prepare()
-				if err != nil {
-					log.WithError(err).Error("Error during work preparation - ignoring")
-				}
-				log.Debug("Delete preparation re-run finished")
-			}
-		}
+			log.Debugf("Worker %d reached OpsDeadline ... stopping", id)
+		}(i)
 	}
+
+	wg.Wait()
+	log.Info("All workers finished")
 }
 
 func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueue, workerID string, shareBucketName bool) {
