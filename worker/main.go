@@ -224,9 +224,11 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 
 	bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
 	for bucket := uint64(0); bucket < bucketCount; bucket++ {
-		bucketName := fmt.Sprintf("%s%s%d", workerID, testConfig.BucketPrefix, bucket)
+		rand.Seed(time.Now().UnixNano())
+		randombucketNumber := rand.Intn(10001)
+		bucketName := fmt.Sprintf("%s%s%d%d", workerID, testConfig.BucketPrefix, bucket, randombucketNumber)
 		if shareBucketName {
-			bucketName = fmt.Sprintf("%s%d", testConfig.BucketPrefix, bucket)
+			bucketName = fmt.Sprintf("%s%d%d", testConfig.BucketPrefix, bucket, randombucketNumber)
 		}
 		err := createBucket(housekeepingSvc, bucketName)
 		if err != nil {
@@ -267,6 +269,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				}
 				*Workqueue.Queue = append(*Workqueue.Queue, new)
 			case "existing_read":
+				rand.Seed(time.Now().UnixNano())
 				err := IncreaseOperationValue(nextOp, 1/float64(testConfig.ExistingReadWeight), Workqueue)
 				if err != nil {
 					log.WithError(err).Error("Could not increase operational Value - ignoring")

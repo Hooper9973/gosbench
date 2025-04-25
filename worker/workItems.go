@@ -161,6 +161,7 @@ func (op *WriteOperation) Do() error {
 		WithField("successful?", err == nil).
 		WithField("latency(ms)", float64(duration.Milliseconds())).
 		Debug("finish WriteOperation")
+	op.ObjectName = fmt.Sprintf("%s-%d", op.TestName, time.Now().UnixNano())
 	return err
 }
 
@@ -266,13 +267,13 @@ func workerFunc(id int, Workqueue *Workqueue, duration time.Duration, numberOfWo
 	for {
 		remainingTime := time.Until(deadline)
 		if remainingTime <= 0 {
-			log.Infof("Worker %d reached Runtime end", id)
+			log.Infof("Parallel %d reached Runtime end", id)
 			return
 		}
 		for j := id; j < len(*Workqueue.Queue); j += numberOfWorker {
 			remainingTime = time.Until(deadline)
 			if remainingTime <= 0 {
-				log.Infof("Worker %d reached Runtime end", id)
+				log.Infof("Parallel %d reached Runtime end", id)
 				return
 			}
 			//log.Infof("Worker %d processing item %d, remaining time: %v", id, j, remainingTime)
