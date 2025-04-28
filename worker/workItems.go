@@ -23,17 +23,19 @@ type WorkItem interface {
 type ReadOperation struct {
 	TestName                 string
 	Bucket                   string
-	ObjectName               string
+	ObjectID                 uint64
+	MaxObjectNum             uint64
 	ObjectSize               uint64
 	WorksOnPreexistingObject bool
 }
 
 // WriteOperation stands for a write operation
 type WriteOperation struct {
-	TestName   string
-	Bucket     string
-	ObjectName string
-	ObjectSize uint64
+	TestName     string
+	Bucket       string
+	ObjectID     uint64
+	MaxObjectNum uint64
+	ObjectSize   uint64
 }
 
 // ListOperation stands for a list operation
@@ -92,16 +94,18 @@ func IncreaseOperationValue(operation string, value float64, Queue *Workqueue) e
 
 // Prepare prepares the execution of the ReadOperation
 func (op *ReadOperation) Prepare() error {
-	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Preparing ReadOperation")
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Preparing ReadOperation")
 	if op.WorksOnPreexistingObject {
 		return nil
 	}
-	return putObject(housekeepingSvc, op.ObjectName, bytes.NewReader(generateRandomBytes(op.ObjectSize)), op.Bucket)
+	return putObject(housekeepingSvc, objectName, bytes.NewReader(generateRandomBytes(op.ObjectSize)), op.Bucket)
 }
 
 // Prepare prepares the execution of the WriteOperation
 func (op *WriteOperation) Prepare() error {
-	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).Debug("Preparing WriteOperation")
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Preparing WriteOperation")
 	return nil
 }
 
@@ -124,9 +128,10 @@ func (op *Stopper) Prepare() error {
 
 // Do executes the actual work of the ReadOperation
 func (op *ReadOperation) Do() error {
-	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Doing ReadOperation")
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Doing ReadOperation")
 	start := time.Now()
-	err := getObject(svc, op.ObjectName, op.Bucket, op.ObjectSize)
+	err := getObjectWithoutSize(svc, objectName, op.Bucket)
 	duration := time.Since(start)
 	promLatency.WithLabelValues(op.TestName, "GET").Observe(float64(duration.Milliseconds()))
 	if err != nil {
@@ -136,18 +141,20 @@ func (op *ReadOperation) Do() error {
 	}
 	promDownloadedBytes.WithLabelValues(op.TestName, "GET").Add(float64(op.ObjectSize))
 	log.WithField("bucket", op.Bucket).
-		WithField("object", op.ObjectName).
+		WithField("object", objectName).
 		WithField("successful?", err == nil).
 		WithField("latency(ms)", float64(duration.Milliseconds())).
 		Debug("finish ReadOperation")
+	op.ObjectID = uint64(time.Now().UnixNano()) % op.MaxObjectNum
 	return err
 }
 
 // Do executes the actual work of the WriteOperation
 func (op *WriteOperation) Do() error {
-	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).Debug("Doing WriteOperation")
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Doing WriteOperation")
 	start := time.Now()
-	err := putObject(svc, op.ObjectName, bytes.NewReader(generateFixedBytes(op.ObjectSize)), op.Bucket)
+	err := putObject(svc, objectName, bytes.NewReader(generateFixedBytes(op.ObjectSize)), op.Bucket)
 	duration := time.Since(start)
 	promLatency.WithLabelValues(op.TestName, "PUT").Observe(float64(duration.Milliseconds()))
 	if err != nil {
@@ -157,11 +164,15 @@ func (op *WriteOperation) Do() error {
 	}
 	promUploadedBytes.WithLabelValues(op.TestName, "PUT").Add(float64(op.ObjectSize))
 	log.WithField("bucket", op.Bucket).
-		WithField("object", op.ObjectName).
+		WithField("object", objectName).
 		WithField("successful?", err == nil).
 		WithField("latency(ms)", float64(duration.Milliseconds())).
 		Debug("finish WriteOperation")
-	op.ObjectName = fmt.Sprintf("%s-%d", op.TestName, time.Now().UnixNano())
+	if op.ObjectID+1000 >= op.MaxObjectNum {
+		//each 1000 objects we hit the max object number
+		log.Info("hit max ObjectNum")
+	}
+	op.ObjectID = (op.ObjectID + 1000) % op.MaxObjectNum
 	return err
 }
 
@@ -215,13 +226,15 @@ func (op *ReadOperation) Clean() error {
 	if op.WorksOnPreexistingObject {
 		return nil
 	}
-	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Cleaning up ReadOperation")
-	return deleteObject(housekeepingSvc, op.ObjectName, op.Bucket)
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Cleaning up ReadOperation")
+	return deleteObject(housekeepingSvc, objectName, op.Bucket)
 }
 
 // Clean removes the objects and buckets left from the previous WriteOperation
 func (op *WriteOperation) Clean() error {
-	return deleteObject(housekeepingSvc, op.ObjectName, op.Bucket)
+	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	return deleteObject(housekeepingSvc, objectName, op.Bucket)
 }
 
 // Clean removes the objects and buckets left from the previous ListOperation

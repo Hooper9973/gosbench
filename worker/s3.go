@@ -152,6 +152,26 @@ func putObject(service *s3.Client, objectName string, objectContent io.ReadSeeke
 // 	log.Debugf("Object Properties:\n%+v", result)
 // }
 
+// countObjects counts the number of objects in the specified bucket.
+func countObjects(service *s3.Client, prefix string, bucket string) (uint64, error) {
+	var objectCount uint64
+	p := s3.NewListObjectsV2Paginator(service, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			log.WithError(err).WithField("bucket", bucket).WithField("prefix", prefix).Errorf("Failed to list objects for counting")
+			return 0, err
+		}
+		objectCount += uint64(len(page.Contents))
+	}
+
+	return objectCount, nil
+}
+
 func listObjects(service *s3.Client, prefix string, bucket string) ([]types.Object, error) {
 	var bucketContents []types.Object
 	p := s3.NewListObjectsV2Paginator(service, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
@@ -167,6 +187,22 @@ func listObjects(service *s3.Client, prefix string, bucket string) ([]types.Obje
 	}
 
 	return bucketContents, nil
+}
+
+func getObjectWithoutSize(service *s3.Client, objectName string, bucket string) error {
+	result, err := service.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &objectName,
+	})
+	if err != nil {
+		log.WithError(err).WithField("objname", objectName).WithField("bucket", bucket).Errorf("Failed to get object")
+		return err
+	}
+	_, err = io.Copy(io.Discard, result.Body)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func getObject(service *s3.Client, objectName string, bucket string, objectSize uint64) error {
