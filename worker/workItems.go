@@ -170,9 +170,10 @@ func (op *WriteOperation) Do() error {
 		Debug("finish WriteOperation")
 	if op.ObjectID+1000 >= op.MaxObjectNum {
 		//each 1000 objects we hit the max object number
+		op.ObjectID = op.ObjectID - op.MaxObjectNum
 		log.Info("hit max ObjectNum")
 	}
-	op.ObjectID = (op.ObjectID + 1000) % op.MaxObjectNum
+	op.ObjectID = op.ObjectID + 1000
 	return err
 }
 
