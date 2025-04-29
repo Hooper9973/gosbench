@@ -15,7 +15,7 @@ import (
 // They can be read,write,list,delete or a stopper
 type WorkItem interface {
 	Prepare() error
-	Do() error
+	Do(randNumber uint64) error
 	Clean() error
 }
 
@@ -23,8 +23,7 @@ type WorkItem interface {
 type ReadOperation struct {
 	TestName                 string
 	Bucket                   string
-	ObjectID                 uint64
-	MaxObjectNum             uint64
+	ObjectName               string
 	ObjectSize               uint64
 	WorksOnPreexistingObject bool
 }
@@ -94,7 +93,7 @@ func IncreaseOperationValue(operation string, value float64, Queue *Workqueue) e
 
 // Prepare prepares the execution of the ReadOperation
 func (op *ReadOperation) Prepare() error {
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	objectName := op.ObjectName
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Preparing ReadOperation")
 	if op.WorksOnPreexistingObject {
 		return nil
@@ -104,7 +103,7 @@ func (op *ReadOperation) Prepare() error {
 
 // Prepare prepares the execution of the WriteOperation
 func (op *WriteOperation) Prepare() error {
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	objectName := fmt.Sprintf("%s%d", op.Bucket, op.ObjectID)
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Preparing WriteOperation")
 	return nil
 }
@@ -127,8 +126,8 @@ func (op *Stopper) Prepare() error {
 }
 
 // Do executes the actual work of the ReadOperation
-func (op *ReadOperation) Do() error {
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+func (op *ReadOperation) Do(randNumber uint64) error {
+	objectName := op.ObjectName
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Doing ReadOperation")
 	start := time.Now()
 	err := getObjectWithoutSize(svc, objectName, op.Bucket)
@@ -145,13 +144,12 @@ func (op *ReadOperation) Do() error {
 		WithField("successful?", err == nil).
 		WithField("latency(ms)", float64(duration.Milliseconds())).
 		Debug("finish ReadOperation")
-	op.ObjectID = uint64(time.Now().UnixNano()) % op.MaxObjectNum
 	return err
 }
 
 // Do executes the actual work of the WriteOperation
-func (op *WriteOperation) Do() error {
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+func (op *WriteOperation) Do(randNumber uint64) error {
+	objectName := fmt.Sprintf("%s%d", op.Bucket, op.ObjectID)
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Doing WriteOperation")
 	start := time.Now()
 	err := putObject(svc, objectName, bytes.NewReader(generateFixedBytes(op.ObjectSize)), op.Bucket)
@@ -168,17 +166,12 @@ func (op *WriteOperation) Do() error {
 		WithField("successful?", err == nil).
 		WithField("latency(ms)", float64(duration.Milliseconds())).
 		Debug("finish WriteOperation")
-	if op.ObjectID+1000 >= op.MaxObjectNum {
-		//each 1000 objects we hit the max object number
-		op.ObjectID = op.ObjectID - op.MaxObjectNum
-		log.Info("hit max ObjectNum")
-	}
-	op.ObjectID = op.ObjectID + 1000
+	op.ObjectID = randNumber % op.MaxObjectNum
 	return err
 }
 
 // Do executes the actual work of the ListOperation
-func (op *ListOperation) Do() error {
+func (op *ListOperation) Do(randNumber uint64) error {
 	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).Debug("Doing ListOperation")
 	start := time.Now()
 	_, err := listObjects(svc, op.ObjectName, op.Bucket)
@@ -198,7 +191,7 @@ func (op *ListOperation) Do() error {
 }
 
 // Do executes the actual work of the DeleteOperation
-func (op *DeleteOperation) Do() error {
+func (op *DeleteOperation) Do(randNumber uint64) error {
 	log.WithField("bucket", op.Bucket).WithField("object", op.ObjectName).Debug("Doing DeleteOperation")
 	start := time.Now()
 	err := deleteObject(svc, op.ObjectName, op.Bucket)
@@ -218,7 +211,7 @@ func (op *DeleteOperation) Do() error {
 }
 
 // Do does nothing here
-func (op *Stopper) Do() error {
+func (op *Stopper) Do(randNumber uint64) error {
 	return nil
 }
 
@@ -227,14 +220,14 @@ func (op *ReadOperation) Clean() error {
 	if op.WorksOnPreexistingObject {
 		return nil
 	}
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	objectName := op.ObjectName
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).WithField("Preexisting?", op.WorksOnPreexistingObject).Debug("Cleaning up ReadOperation")
 	return deleteObject(housekeepingSvc, objectName, op.Bucket)
 }
 
 // Clean removes the objects and buckets left from the previous WriteOperation
 func (op *WriteOperation) Clean() error {
-	objectName := fmt.Sprintf("%s-%d", op.TestName, op.ObjectID)
+	objectName := fmt.Sprintf("%s%d", op.Bucket, op.ObjectID)
 	return deleteObject(housekeepingSvc, objectName, op.Bucket)
 }
 
@@ -253,32 +246,12 @@ func (op *Stopper) Clean() error {
 	return nil
 }
 
-// DoWork processes the workitems in the workChannel until
-// either the time runs out or a stopper is found
-func DoWork(workChannel <-chan WorkItem, notifyChan <-chan struct{}, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		select {
-		case <-notifyChan:
-			log.Debugf("Runtime over - Got timeout from work context")
-			return
-		case work := <-workChannel:
-			switch work.(type) {
-			case *Stopper:
-				log.Debug("Found the end of the work Queue - stopping")
-				return
-			}
-			err := work.Do()
-			if err != nil {
-				log.WithError(err).Error("Issues when performing work - ignoring")
-			}
-		}
-	}
-}
 func workerFunc(id int, Workqueue *Workqueue, duration time.Duration, numberOfWorker int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	deadline := time.Now().Add(duration)
+	r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(numberOfWorker)))
 	for {
+
 		remainingTime := time.Until(deadline)
 		if remainingTime <= 0 {
 			log.Infof("Parallel %d reached Runtime end", id)
@@ -291,7 +264,8 @@ func workerFunc(id int, Workqueue *Workqueue, duration time.Duration, numberOfWo
 				return
 			}
 			//log.Infof("Worker %d processing item %d, remaining time: %v", id, j, remainingTime)
-			err := (*Workqueue.Queue)[j].Do()
+			randomNumber := r.Uint64()
+			err := (*Workqueue.Queue)[j].Do(randomNumber)
 			if err != nil {
 				log.WithError(err).Error("Issues when performing work - ignoring")
 			}

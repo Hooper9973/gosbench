@@ -172,6 +172,28 @@ func countObjects(service *s3.Client, prefix string, bucket string) (uint64, err
 	return objectCount, nil
 }
 
+func listObjectsWithMax(service *s3.Client, prefix string, bucket string, maxResults int) ([]types.Object, error) {
+	var bucketContents []types.Object
+	p := s3.NewListObjectsV2Paginator(service, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: aws.Int32(int32(maxResults)),
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			log.WithError(err).WithField("prefix", prefix).WithField("bucket", bucket).Errorf("Failed to list objects")
+			return nil, err
+		}
+		bucketContents = append(bucketContents, page.Contents...)
+		if len(bucketContents) >= maxResults {
+			// Limit the total number of results to maxResults
+			return bucketContents[:maxResults], nil
+		}
+	}
+	return bucketContents, nil
+}
+
 func listObjects(service *s3.Client, prefix string, bucket string) ([]types.Object, error) {
 	var bucketContents []types.Object
 	p := s3.NewListObjectsV2Paginator(service, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"math/rand"
 	"net"
 	"os"
@@ -182,12 +183,15 @@ func workUntilOps(Workqueue *Workqueue, maxOps uint64, numberOfWorker int) {
 	wg.Add(numberOfWorker)
 
 	for i := 0; i < numberOfWorker; i++ {
+		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(i)))
+
 		go func(id int) {
 			defer wg.Done()
 			currentOps := uint64(0)
 			for currentOps < maxOps {
 				for j := id; j < len(*Workqueue.Queue); j += numberOfWorker {
-					err := (*Workqueue.Queue)[j].Do()
+					randomNumber := r.Uint64()
+					err := (*Workqueue.Queue)[j].Do(randomNumber)
 					if err != nil {
 						log.WithError(err).Error("Issues when performing work - ignoring")
 					}
@@ -197,7 +201,7 @@ func workUntilOps(Workqueue *Workqueue, maxOps uint64, numberOfWorker int) {
 					}
 				}
 			}
-			log.Debugf("Worker %d reached OpsDeadline ... stopping", id)
+			log.Debugf("parallel %d reached OpsDeadline ... stopping", id)
 		}(i)
 	}
 
@@ -251,12 +255,15 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 		if err != nil {
 			log.WithError(err).WithField("bucket", bucketName).Error("Error when creating bucket")
 		}
+		objectCount := common.EvaluateDistribution(testConfig.Objects.NumberMin, testConfig.Objects.NumberMax, &testConfig.Objects.NumberLast, 1, testConfig.Objects.NumberDistribution)
+		var preExistingObjects []types.Object
 		var preExistingObjectCount uint64
 		if testConfig.ExistingReadWeight > 0 {
-			preExistingObjectCount, err = countObjects(housekeepingSvc, "", bucketName)
+			preExistingObjects, err = listObjectsWithMax(housekeepingSvc, "", bucketName, int(objectCount))
 			if err != nil {
 				log.WithError(err).Fatalf("Problems when listing contents of bucket %s", bucketName)
 			}
+			preExistingObjectCount = uint64(len(preExistingObjects))
 			log.Debugf("Found %d objects in bucket %s", preExistingObjectCount, bucketName)
 
 			if preExistingObjectCount <= 0 {
@@ -264,11 +271,9 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				continue
 			}
 		}
-		objectCount := common.EvaluateDistribution(testConfig.Objects.NumberMin, testConfig.Objects.NumberMax, &testConfig.Objects.NumberLast, 1, testConfig.Objects.NumberDistribution)
 
 		for object := uint64(0); object < 1000; object++ {
 			objectSize := common.EvaluateDistribution(testConfig.Objects.SizeMin, testConfig.Objects.SizeMax, &testConfig.Objects.SizeLast, 1, testConfig.Objects.SizeDistribution)
-
 			nextOp := GetNextOperation(Workqueue)
 			switch nextOp {
 			case "read":
@@ -279,8 +284,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				new := &ReadOperation{
 					TestName:                 testConfig.Name,
 					Bucket:                   bucketName,
-					ObjectID:                 object,
-					MaxObjectNum:             objectCount,
+					ObjectName:               fmt.Sprintf("%s%s%d", workerID, testConfig.ObjectPrefix, object),
 					ObjectSize:               objectSize,
 					WorksOnPreexistingObject: false,
 				}
@@ -294,8 +298,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				new := &ReadOperation{
 					TestName:                 testConfig.Name,
 					Bucket:                   bucketName,
-					ObjectID:                 object,
-					MaxObjectNum:             objectCount,
+					ObjectName:               *preExistingObjects[object%preExistingObjectCount].Key,
 					ObjectSize:               objectSize,
 					WorksOnPreexistingObject: true,
 				}
