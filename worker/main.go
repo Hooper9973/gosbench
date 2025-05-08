@@ -246,44 +246,43 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 
 	bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
 
-	for object := uint64(0); object < 1000; object++ {
-		objectSize := common.EvaluateDistribution(testConfig.Objects.SizeMin, testConfig.Objects.SizeMax, &testConfig.Objects.SizeLast, 1, testConfig.Objects.SizeDistribution)
-		for bucket := uint64(0); bucket < 3000; bucket++ {
-			baseBucketNum := bucketCount * uint64(workerUint)
-			BucketPrefix := "xdc1-"
-			if bucket%3 == 0 {
-				BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "38-")
-			} else if bucket%3 == 1 {
-				BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "25-")
-			} else if bucket%3 == 2 {
-				BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "137-")
-			}
+	for bucket := uint64(0); bucket < 3000; bucket++ {
+		baseBucketNum := bucketCount * uint64(workerUint)
+		BucketPrefix := "xdc1-"
+		if bucket%3 == 0 {
+			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "38-")
+		} else if bucket%3 == 1 {
+			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "25-")
+		} else if bucket%3 == 2 {
+			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "137-")
+		}
 
-			bucketName := fmt.Sprintf("%s%d", BucketPrefix, (bucket+baseBucketNum)/3%bucketCount)
-			if shareBucketName {
-				bucketName = fmt.Sprintf("%s%d", BucketPrefix, bucket%bucketCount)
-			}
-			err := createBucket(housekeepingSvc, bucketName)
+		bucketName := fmt.Sprintf("%s%d", BucketPrefix, (bucket+baseBucketNum)/3%bucketCount)
+		if shareBucketName {
+			bucketName = fmt.Sprintf("%s%d", BucketPrefix, bucket/3%bucketCount)
+		}
+		err := createBucket(housekeepingSvc, bucketName)
+		if err != nil {
+			log.WithError(err).WithField("bucket", bucketName).Error("Error when creating bucket")
+		}
+		objectCount := common.EvaluateDistribution(testConfig.Objects.NumberMin, testConfig.Objects.NumberMax, &testConfig.Objects.NumberLast, 1, testConfig.Objects.NumberDistribution)
+		var preExistingObjects []types.Object
+		var preExistingObjectCount uint64
+		if testConfig.ExistingReadWeight > 0 {
+			preExistingObjects, err = listObjectsWithMax(housekeepingSvc, "", bucketName, int(objectCount))
 			if err != nil {
-				log.WithError(err).WithField("bucket", bucketName).Error("Error when creating bucket")
+				log.WithError(err).Fatalf("Problems when listing contents of bucket %s", bucketName)
 			}
-			objectCount := common.EvaluateDistribution(testConfig.Objects.NumberMin, testConfig.Objects.NumberMax, &testConfig.Objects.NumberLast, 1, testConfig.Objects.NumberDistribution)
-			var preExistingObjects []types.Object
-			var preExistingObjectCount uint64
-			if testConfig.ExistingReadWeight > 0 {
-				preExistingObjects, err = listObjectsWithMax(housekeepingSvc, "", bucketName, int(objectCount))
-				if err != nil {
-					log.WithError(err).Fatalf("Problems when listing contents of bucket %s", bucketName)
-				}
-				preExistingObjectCount = uint64(len(preExistingObjects))
-				log.Debugf("Found %d objects in bucket %s", preExistingObjectCount, bucketName)
+			preExistingObjectCount = uint64(len(preExistingObjects))
+			log.Debugf("Found %d objects in bucket %s", preExistingObjectCount, bucketName)
 
-				if preExistingObjectCount <= 0 {
-					log.Warningf("There is no objects in bucket %s", bucketName)
-					continue
-				}
+			if preExistingObjectCount <= 0 {
+				log.Warningf("There is no objects in bucket %s", bucketName)
+				continue
 			}
-
+		}
+		for object := uint64(0); object < 1000; object++ {
+			objectSize := common.EvaluateDistribution(testConfig.Objects.SizeMin, testConfig.Objects.SizeMax, &testConfig.Objects.SizeLast, 1, testConfig.Objects.SizeDistribution)
 			nextOp := GetNextOperation(Workqueue)
 			switch nextOp {
 			case "read":
