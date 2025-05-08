@@ -245,7 +245,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 	}
 
 	bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
-
+	// for bucket first avoid do list again and again
 	for bucket := uint64(0); bucket < 3000; bucket++ {
 		baseBucketNum := bucketCount * uint64(workerUint)
 		BucketPrefix := "xdc1-"
