@@ -249,11 +249,12 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 	for bucket := uint64(0); bucket < 3000; bucket++ {
 		baseBucketNum := bucketCount * uint64(workerUint)
 		BucketPrefix := "xdc1-"
-		if bucket%3 == 0 {
+		randNum := rand.Intn(3000)
+		if randNum%3 == 0 {
 			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "38-")
-		} else if bucket%3 == 1 {
+		} else if randNum%3 == 1 {
 			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "25-")
-		} else if bucket%3 == 2 {
+		} else if randNum%3 == 2 {
 			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "137-")
 		}
 
