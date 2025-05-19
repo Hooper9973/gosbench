@@ -246,21 +246,30 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 
 	bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
 	// for bucket first avoid do list again and again
-	for bucket := uint64(0); bucket < 3000; bucket++ {
+	bucketrange := bucketCount
+	if testConfig.ExistingReadWeight == 100 {
+		bucketrange = 3 * bucketCount
+	}
+	for bucket := uint64(0); bucket < bucketrange; bucket++ {
 		baseBucketNum := bucketCount * uint64(workerUint)
-		BucketPrefix := "xdc1-"
+		preExistingBucketPrefix := testConfig.BucketPrefix
 		randNum := rand.Intn(3000)
 		if randNum%3 == 0 {
-			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "38-")
+			preExistingBucketPrefix = fmt.Sprintf("%s%s", preExistingBucketPrefix, "38-")
 		} else if randNum%3 == 1 {
-			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "25-")
+			preExistingBucketPrefix = fmt.Sprintf("%s%s", preExistingBucketPrefix, "25-")
 		} else if randNum%3 == 2 {
-			BucketPrefix = fmt.Sprintf("%s%s", BucketPrefix, "137-")
+			preExistingBucketPrefix = fmt.Sprintf("%s%s", preExistingBucketPrefix, "137-")
 		}
-
-		bucketName := fmt.Sprintf("%s%d", BucketPrefix, (bucket+baseBucketNum)/3%bucketCount)
+		bucketName := fmt.Sprintf("%s%d", testConfig.BucketPrefix, bucket+baseBucketNum)
 		if shareBucketName {
-			bucketName = fmt.Sprintf("%s%d", BucketPrefix, bucket/3%bucketCount)
+			bucketName = fmt.Sprintf("%s%d", testConfig.BucketPrefix, bucket)
+		}
+		if testConfig.ExistingReadWeight > 0 {
+			bucketName = fmt.Sprintf("%s%d", preExistingBucketPrefix, (bucket+baseBucketNum)/3%bucketCount)
+			if shareBucketName {
+				bucketName = fmt.Sprintf("%s%d", preExistingBucketPrefix, bucket/3%bucketCount)
+			}
 		}
 		err := createBucket(housekeepingSvc, bucketName)
 		if err != nil {
