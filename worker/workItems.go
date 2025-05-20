@@ -32,6 +32,7 @@ type ReadOperation struct {
 type WriteOperation struct {
 	TestName     string
 	Bucket       string
+	ObjectPrefix string
 	ObjectID     uint64
 	MaxObjectNum uint64
 	ObjectSize   uint64
@@ -103,7 +104,7 @@ func (op *ReadOperation) Prepare() error {
 
 // Prepare prepares the execution of the WriteOperation
 func (op *WriteOperation) Prepare() error {
-	objectName := fmt.Sprintf("%s%d", op.Bucket, op.ObjectID)
+	objectName := fmt.Sprintf("%s%s%d", op.Bucket, op.ObjectPrefix, op.ObjectID)
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Preparing WriteOperation")
 	return nil
 }
@@ -149,7 +150,7 @@ func (op *ReadOperation) Do(randNumber uint64) error {
 
 // Do executes the actual work of the WriteOperation
 func (op *WriteOperation) Do(randNumber uint64) error {
-	objectName := fmt.Sprintf("%s%d", op.Bucket, op.ObjectID)
+	objectName := fmt.Sprintf("%s%s%d", op.Bucket, op.ObjectPrefix, op.ObjectID)
 	log.WithField("bucket", op.Bucket).WithField("object", objectName).Debug("Doing WriteOperation")
 	start := time.Now()
 	err := putObject(svc, objectName, bytes.NewReader(generateFixedBytes(op.ObjectSize)), op.Bucket)

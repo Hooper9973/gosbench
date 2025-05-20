@@ -330,6 +330,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				new := &WriteOperation{
 					TestName:     testConfig.Name,
 					Bucket:       bucketName,
+					ObjectPrefix: testConfig.ObjectPrefix,
 					ObjectID:     object,
 					MaxObjectNum: objectCount,
 					ObjectSize:   objectSize,
