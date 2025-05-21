@@ -278,8 +278,9 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 		objectCount := common.EvaluateDistribution(testConfig.Objects.NumberMin, testConfig.Objects.NumberMax, &testConfig.Objects.NumberLast, 1, testConfig.Objects.NumberDistribution)
 		var preExistingObjects []types.Object
 		var preExistingObjectCount uint64
+		preExistingObjectprefix := fmt.Sprintf("%s%s", bucketName, testConfig.ObjectPrefix)
 		if testConfig.ExistingReadWeight > 0 {
-			preExistingObjects, err = listObjectsWithMax(housekeepingSvc, "", bucketName, int(objectCount))
+			preExistingObjects, err = listObjectsWithMax(housekeepingSvc, preExistingObjectprefix, bucketName, int(objectCount))
 			if err != nil {
 				log.WithError(err).Fatalf("Problems when listing contents of bucket %s", bucketName)
 			}
