@@ -247,7 +247,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 	bucketCount := common.EvaluateDistribution(testConfig.Buckets.NumberMin, testConfig.Buckets.NumberMax, &testConfig.Buckets.NumberLast, 1, testConfig.Buckets.NumberDistribution)
 	// for bucket first avoid do list again and again
 	bucketrange := bucketCount
-	if testConfig.ExistingReadWeight == 100 {
+	if testConfig.ExistingReadWeight == 1000 {
 		bucketrange = 3 * bucketCount
 	}
 	for bucket := uint64(0); bucket < bucketrange; bucket++ {
@@ -265,7 +265,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 		if shareBucketName {
 			bucketName = fmt.Sprintf("%s%d", testConfig.BucketPrefix, bucket)
 		}
-		if testConfig.ExistingReadWeight > 0 {
+		if testConfig.ExistingReadWeight == 1000 {
 			bucketName = fmt.Sprintf("%s%d", preExistingBucketPrefix, (bucket+baseBucketNum)/3%bucketCount)
 			if shareBucketName {
 				bucketName = fmt.Sprintf("%s%d", preExistingBucketPrefix, bucket/3%bucketCount)
