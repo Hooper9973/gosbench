@@ -177,7 +177,7 @@ func listObjectsWithMax(service *s3.Client, prefix string, bucket string, maxRes
 	p := s3.NewListObjectsV2Paginator(service, &s3.ListObjectsV2Input{
 		Bucket:  aws.String(bucket),
 		Prefix:  aws.String(prefix),
-		MaxKeys: aws.Int32(int32(maxResults)),
+		MaxKeys: aws.Int32(1000),
 	})
 	for p.HasMorePages() {
 		page, err := p.NextPage(ctx)

@@ -292,7 +292,7 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 				continue
 			}
 		}
-		for object := uint64(0); object < 1000; object++ {
+		for object := uint64(0); object < preExistingObjectCount; object++ {
 			objectSize := common.EvaluateDistribution(testConfig.Objects.SizeMin, testConfig.Objects.SizeMax, &testConfig.Objects.SizeLast, 1, testConfig.Objects.SizeDistribution)
 			nextOp := GetNextOperation(Workqueue)
 			switch nextOp {
