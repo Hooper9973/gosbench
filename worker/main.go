@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"math/rand"
 	"net"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/mulbc/gosbench/common"
 	log "github.com/sirupsen/logrus"
@@ -209,7 +210,6 @@ func workUntilOps(Workqueue *Workqueue, maxOps uint64, numberOfWorker int) {
 	log.Info("All workers finished")
 }
 
-// 示例函数
 func extractWorkerID(workerID string) (uint, error) {
 	workerIDStr := strings.TrimPrefix(workerID, "w")
 	workerIDUint, err := strconv.ParseUint(workerIDStr, 10, 32)
@@ -364,4 +364,11 @@ func fillWorkqueue(testConfig *common.TestCaseConfiguration, Workqueue *Workqueu
 			}
 		}
 	}
+	if testConfig.ExistingReadWeight == 1000 {
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(*Workqueue.Queue), func(i, j int) {
+			(*Workqueue.Queue)[i], (*Workqueue.Queue)[j] = (*Workqueue.Queue)[j], (*Workqueue.Queue)[i]
+		})
+	}
+
 }
