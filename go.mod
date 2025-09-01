@@ -1,6 +1,6 @@
 module github.com/mulbc/gosbench
 
-go 1.22
+go 1.24
 
 toolchain go1.22.6
 
